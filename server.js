@@ -131,7 +131,7 @@ const LeadInputSchema = {
 function createMcpServer() {
   const server = new McpServer({
     name: 'SyncTerra Automation',
-    version: '1.2.1'
+    version: '1.2.2'
   });
 
   server.tool(
@@ -349,6 +349,7 @@ function createMcpServer() {
       return asMcpText(result);
     }
   );
+
 server.tool(
   'drive_trash_folder',
   'Move a folder to Google Drive trash. This does not permanently delete it.',
@@ -443,7 +444,7 @@ app.get('/health', function (req, res) {
   res.json({
     ok: true,
     service: 'syncterra-automation-mcp',
-    version: '1.2.1',
+    version: '1.2.2',
     modules: ['create_offer', 'drive_admin']
   });
 });
