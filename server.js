@@ -349,7 +349,37 @@ function createMcpServer() {
       return asMcpText(result);
     }
   );
+server.tool(
+  'drive_trash_folder',
+  'Move a folder to Google Drive trash. This does not permanently delete it.',
+  {
+    folder_id: z.string().describe('Google Drive folder ID')
+  },
+  async (input) => {
+    const result = await callDriveAdmin({
+      action: 'trash_folder',
+      folder_id: input.folder_id
+    });
 
+    return asMcpText(result);
+  }
+);
+
+server.tool(
+  'drive_restore_folder',
+  'Restore a folder from Google Drive trash.',
+  {
+    folder_id: z.string().describe('Google Drive folder ID')
+  },
+  async (input) => {
+    const result = await callDriveAdmin({
+      action: 'restore_folder',
+      folder_id: input.folder_id
+    });
+
+    return asMcpText(result);
+  }
+);
   server.tool(
     'drive_restore_file',
     'Restore a file from Google Drive trash.',
