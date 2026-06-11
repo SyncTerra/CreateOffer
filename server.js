@@ -42,6 +42,28 @@ function checkBearerAuth(req, res, next) {
   return next();
 }
 
+function buildLeadPayload(input) {
+  const payload = {};
+
+  if (input.lead_id) {
+    payload.lead_id = input.lead_id;
+  }
+
+  if (input.name) {
+    payload.name = input.name;
+  }
+
+  if (input.phone) {
+    payload.phone = input.phone;
+  }
+
+  if (input.email) {
+    payload.email = input.email;
+  }
+
+  return payload;
+}
+
 async function callAppsScript(payload) {
   const response = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
@@ -81,22 +103,67 @@ function asMcpText(data) {
   };
 }
 
+const LeadInputSchema = {
+  lead_id: z
+    .string()
+    .optional()
+    .describe('Lead ID from CRM, for example ST-20260611-1030'),
+  name: z
+    .string()
+    .optional()
+    .describe('Client name or company name from CRM, for example Jan Kowalski'),
+  phone: z
+    .string()
+    .optional()
+    .describe('Client phone number from CRM, for example +48 500 600 700'),
+  email: z
+    .string()
+    .optional()
+    .describe('Client email address from CRM')
+};
+
 function createMcpServer() {
   const server = new McpServer({
     name: 'SyncTerra Offer Automation',
-    version: '1.0.0'
+    version: '1.1.0'
   });
 
   server.tool(
+    'find_lead',
+    'Find a CRM lead by Lead ID, client name, phone, or email. If multiple leads match, returns candidates and does not choose automatically.',
+    LeadInputSchema,
+    async (input) => {
+      const result = await callAppsScript({
+        action: 'find_lead',
+        ...buildLeadPayload(input)
+      });
+
+      return asMcpText(result);
+    }
+  );
+
+  server.tool(
+    'get_offer_status',
+    'Check whether a CRM lead already has an offer link. Accepts Lead ID, client name, phone, or email.',
+    LeadInputSchema,
+    async (input) => {
+      const result = await callAppsScript({
+        action: 'get_offer_status',
+        ...buildLeadPayload(input)
+      });
+
+      return asMcpText(result);
+    }
+  );
+
+  server.tool(
     'create_or_update_offer_draft',
-    'Create the first offer draft for a Lead ID if no offer exists. If an offer already exists in CRM Oferta link, update the same existing Google Slides file. Do not create duplicates.',
-    {
-      lead_id: z.string().describe('Lead ID from CRM, for example ST-20260611-1030')
-    },
-    async ({ lead_id }) => {
+    'Create the first offer draft if no offer exists, or update the same existing Google Slides offer if CRM Oferta link already exists. Accepts Lead ID, client name, phone, or email. Does not create duplicates.',
+    LeadInputSchema,
+    async (input) => {
       const result = await callAppsScript({
         action: 'create_or_update_offer_draft',
-        lead_id
+        ...buildLeadPayload(input)
       });
 
       return asMcpText(result);
@@ -105,14 +172,12 @@ function createMcpServer() {
 
   server.tool(
     'create_offer_draft',
-    'Create the first offer draft only if CRM Oferta link is empty. If an offer already exists, do not create a new copy.',
-    {
-      lead_id: z.string().describe('Lead ID from CRM')
-    },
-    async ({ lead_id }) => {
+    'Create the first offer draft only if CRM Oferta link is empty. If an offer already exists, do not create a new copy. Accepts Lead ID, client name, phone, or email.',
+    LeadInputSchema,
+    async (input) => {
       const result = await callAppsScript({
         action: 'create_offer_draft',
-        lead_id
+        ...buildLeadPayload(input)
       });
 
       return asMcpText(result);
@@ -121,9 +186,9 @@ function createMcpServer() {
 
   server.tool(
     'update_offer_draft',
-    'Update the existing offer linked in CRM Oferta link. This does not create a new file.',
+    'Update the existing offer linked in CRM Oferta link. This does not create a new file. Accepts Lead ID, client name, phone, or email.',
     {
-      lead_id: z.string().describe('Lead ID from CRM'),
+      ...LeadInputSchema,
       clean_optional_pages: z
         .boolean()
         .optional()
@@ -133,10 +198,15 @@ function createMcpServer() {
         .optional()
         .describe('Optional placeholder replacements, for example {"{{PRICE_BADGE}}":"draft po aktualizacji"}')
     },
-    async ({ lead_id, clean_optional_pages = false, replacements = {} }) => {
+    async (input) => {
+      const {
+        clean_optional_pages = false,
+        replacements = {}
+      } = input;
+
       const result = await callAppsScript({
         action: 'update_offer_draft',
-        lead_id,
+        ...buildLeadPayload(input),
         clean_optional_pages,
         replacements
       });
@@ -146,36 +216,20 @@ function createMcpServer() {
   );
 
   server.tool(
-    'get_offer_status',
-    'Check whether a Lead ID already has an offer link in CRM and return current offer status.',
-    {
-      lead_id: z.string().describe('Lead ID from CRM')
-    },
-    async ({ lead_id }) => {
-      const result = await callAppsScript({
-        action: 'get_offer_status',
-        lead_id
-      });
-
-      return asMcpText(result);
-    }
-  );
-
-  server.tool(
     'create_offer_version',
-    'Create a new explicit version of the offer only when manager requested a new version, v2, or alternative variant.',
+    'Create a new explicit version of the offer only when the manager requested a new version, v2, or alternative variant. Accepts Lead ID, client name, phone, or email.',
     {
-      lead_id: z.string().describe('Lead ID from CRM'),
+      ...LeadInputSchema,
       version_label: z
         .string()
         .optional()
         .describe('Version label, for example v2 or wariant_tanszy')
     },
-    async ({ lead_id, version_label = 'v2' }) => {
+    async (input) => {
       const result = await callAppsScript({
         action: 'create_offer_version',
-        lead_id,
-        version_label
+        ...buildLeadPayload(input),
+        version_label: input.version_label || 'v2'
       });
 
       return asMcpText(result);
@@ -188,7 +242,8 @@ function createMcpServer() {
 app.get('/health', (req, res) => {
   res.json({
     ok: true,
-    service: 'syncterra-offer-mcp'
+    service: 'syncterra-offer-mcp',
+    version: '1.1.0'
   });
 });
 
